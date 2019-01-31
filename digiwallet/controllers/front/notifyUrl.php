@@ -1,15 +1,15 @@
 <?php
-
 /**
- * @file    Provides support for TargetPay iDEAL, Mister Cash and Sofort Banking ...
- * @author  Yellow Melon B.V.
- * @url     http://www.idealplugins.nl
- *
+ * @author  DigiWallet.nl
+ * @copyright Copyright (C) 2018 e-plugins.nl
+*  @license   http://opensource.org/licenses/afl-3.0.php  Academic Free License (AFL 3.0)
+ * @url     http://www.e-plugins.nl
  * 11-09-2014 -> Removed checkReportValidity
  * 14-01-2015 -> Secure key added
  * 11-01-2017 -> Apply new logic
  */
-class Ps_TargetpayNotifyUrlModuleFrontController extends ModuleFrontController
+
+class DigiwalletNotifyUrlModuleFrontController extends ModuleFrontController
 {
     public $ssl = true;
 
@@ -19,18 +19,18 @@ class Ps_TargetpayNotifyUrlModuleFrontController extends ModuleFrontController
      */
     public function initContent()
     {
-        $ps_targetpay = $this->module;
+        $digiwallet = $this->module;
         $trxid = Tools::getValue('trxid');
-        if(empty($trxid)) { //paypal use paypalid instead of trxid
+        if (empty($trxid)) { //paypal use paypalid instead of trxid
             $trxid = Tools::getValue('acquirerID');
         }
-        if(empty($trxid)) { //for afterpay use invoiceID instead of trxid
+        if (empty($trxid)) { //for afterpay use invoiceID instead of trxid
             $trxid = Tools::getValue('invoiceID');
         }
         
-        $transactionInfoArr = $ps_targetpay->selectTransaction($trxid);
+        $transactionInfoArr = $digiwallet->selectTransaction($trxid);
         if ($transactionInfoArr) {
-            $return = $ps_targetpay->updateOrderAfterCheck($transactionInfoArr);
+            $return = $digiwallet->updateOrderAfterCheck($transactionInfoArr);
             echo $return . "<br />";
             die('Done version 1.7.xx');
         }

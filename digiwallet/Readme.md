@@ -1,0 +1,1 @@
+# Digiwallet for Prestashop

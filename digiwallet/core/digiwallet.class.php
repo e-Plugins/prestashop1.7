@@ -1,9 +1,11 @@
 <?php
-
 /**
- * @file     Provides support for TargetPay iDEAL, Mister Cash and Sofort Banking
- * @author   Yellow Melon B.V.
- * @url      http://www.idealplugins.nl
+ * Digiwallet Core class
+ *
+ * @author  DigiWallet.nl
+ * @copyright Copyright (C) 2018 e-plugins.nl
+ * @license   http://opensource.org/licenses/afl-3.0.php  Academic Free License (AFL 3.0)
+ * @url      http://www.e-plugins.nl
  * @release  29-09-2014
  * @ver      2.5
  *
@@ -15,10 +17,8 @@
  * v2.4     Removed IP_range and deprecated checkReportValidity . Because it is bad practice.
  * v2.5     Added creditcards by ATOS
  */
-/**
- * @class TargetPay Core class
- */
-class TargetPayCore
+
+class DigiwalletCore
 {
     const APP_ID = 'dw_prestashop1.7_1.0.4';
     // Constants
@@ -27,7 +27,8 @@ class TargetPayCore
     
     const ERR_NO_AMOUNT         = "Geen bedrag meegegeven | No amount given";
     const ERR_NO_DESCRIPTION    = "Geen omschrijving meegegeven | No description given";
-    const ERR_NO_RTLO           = "Geen rtlo (layoutcode TargetPay) bekend; controleer de module instellingen | No rtlo (layoutcode TargetPay) filled in, check the module settings";
+    const ERR_NO_RTLO           = "Geen rtlo (layoutcode Digiwallet) bekend; controleer de module instellingen 
+| No rtlo (layoutcode Digiwallet) filled in, check the module settings";
     const ERR_NO_TXID           = "Er is een onjuist transactie ID opgegeven | An incorrect transaction ID was given";
     const ERR_NO_RETURN_URL     = "Geen of ongeldige return URL | No or invalid return URL";
     const ERR_NO_REPORT_URL     = "Geen of ongeldige report URL | No or invalid report URL";
@@ -39,7 +40,7 @@ class TargetPayCore
     
     protected $paymentOptions   = array("IDE", "MRC", "DEB", "WAL", "CC", "PYP", "BW", "AFP");
     
-    protected $checkAPIs = [
+    protected $checkAPIs = array(
         "IDE" => "https://transaction.digiwallet.nl/ideal/check",
         "MRC" => "https://transaction.digiwallet.nl/mrcash/check",
         "DEB" => "https://transaction.digiwallet.nl/directebanking/check",
@@ -48,9 +49,9 @@ class TargetPayCore
         "PYP" => "https://transaction.digiwallet.nl/paypal/check",
         "AFP" => "https://transaction.digiwallet.nl/afterpay/check",
         "BW"  => "https://transaction.digiwallet.nl/bankwire/check"
-    ];
+    );
     
-    protected $startAPIs = [
+    protected $startAPIs = array(
         "IDE" => "https://transaction.digiwallet.nl/ideal/start",
         "MRC" => "https://transaction.digiwallet.nl/mrcash/start",
         "DEB" => "https://transaction.digiwallet.nl/directebanking/start",
@@ -59,7 +60,7 @@ class TargetPayCore
         "PYP" => "https://transaction.digiwallet.nl/paypal/start",
         "AFP" => "https://transaction.digiwallet.nl/afterpay/start",
         "BW" => "https://transaction.digiwallet.nl/bankwire/start"
-    ];
+    );
     
     // Variables
     
@@ -72,9 +73,9 @@ class TargetPayCore
     protected $countryId        = null;
     protected $amount           = 0;
     protected $description      = null;
-    protected $returnUrl        = null; // When using the AUTO-setting; %payMethod% will be replaced by the actual payment method just before starting the payment
-    protected $cancelUrl        = null; // When using the AUTO-setting; %payMethod% will be replaced by the actual payment method just before starting the payment
-    protected $reportUrl        = null; // When using the AUTO-setting; %payMethod% will be replaced by the actual payment method just before starting the payment
+    protected $returnUrl        = null;
+    protected $cancelUrl        = null;
+    protected $reportUrl        = null;
     
     protected $bankUrl          = null;
     
@@ -87,7 +88,7 @@ class TargetPayCore
     
     protected $moreInformation = null;
     
-    protected $consumerInfo = [];
+    protected $consumerInfo = array();
     
     // bankwire salt
     public $bwSalt = 'yh268hp';
@@ -100,14 +101,14 @@ class TargetPayCore
      */
     public function __construct($payMethod, $rtlo = false, $language = "nl")
     {
-        $payMethod = strtoupper($payMethod);
+        $payMethod = Tools::strtoupper($payMethod);
         if (in_array($payMethod, $this->paymentOptions)) {
             $this->payMethod = $payMethod;
         } else {
             return false;
         }
         $this->rtlo = (int) $rtlo;
-        $this->language = strtolower(substr($language, 0, 2));
+        $this->language = Tools::strtolower(Tools::substr($language, 0, 2));
     }
     
     /**
@@ -120,16 +121,17 @@ class TargetPayCore
         $xml = $this->httpRequest($url);
         $banks_array = array();
         if (! $xml) {
-            $banks_array["IDE0001"] = "Bankenlijst kon niet opgehaald worden bij TargetPay, controleer of curl werkt!";
+            $banks_array["IDE0001"] = "Bankenlijst kon niet opgehaald worden bij Digiwallet, controleer of curl werkt!";
             $banks_array["IDE0002"] = "  ";
         } else {
             $p = xml_parser_create();
             xml_parse_into_struct($p, $xml, $banks_object, $index);
             xml_parser_free($p);
             foreach ($banks_object as $bank) {
-                if(empty($bank['attributes']['ID']))
+                if (empty($bank['attributes']['ID'])) {
                     continue;
-                    $banks_array[$bank['attributes']['ID']] = $bank['value'];
+                }
+                $banks_array[$bank['attributes']['ID']] = $bank['value'];
             }
         }
         return $banks_array;
@@ -148,7 +150,7 @@ class TargetPayCore
     }
     
     /**
-     * Start transaction with TargetPay
+     * Start transaction with Digiwallet
      *
      * Set at least: amount, description, returnUrl, reportUrl (optional: cancelUrl)
      * In case of iDEAL: bankId
@@ -203,7 +205,8 @@ class TargetPayCore
                 $url .= '?ver=2' . '&lang=' . urlencode($this->getLanguage(array("NL", "FR", "EN"), "NL"));
                 break;
             case 'DEB':
-                $url .= '?ver=2&type=1' . '&country='.urlencode($this->countryId ? $this->countryId : 'DE'). '&lang=' . urlencode($this->getLanguage(array("NL", "EN", "DE"), "DE"));
+                $url .= '?ver=2&type=1' . '&country='.urlencode($this->countryId ? $this->countryId : 'DE').
+                        '&lang=' . urlencode($this->getLanguage(array("NL", "EN", "DE"), "DE"));
                 break;
             case 'CC':
                 $url .= '?ver=3';
@@ -235,11 +238,11 @@ class TargetPayCore
         }
         
         $result = $this->httpRequest($url);
-        $result_code = substr($result, 0, 6);
+        $result_code = Tools::substr($result, 0, 6);
         if (($result_code == "000000") || ($result_code == "000001" && $this->payMethod == "CC")) {
-            $result = substr($result, 7);
+            $result = Tools::substr($result, 7);
             if ($this->payMethod == 'AFP') {
-                list($this->transactionId, $status, $this->bankUrl) = explode("|", $result);
+                list($this->transactionId, , $this->bankUrl) = explode("|", $result);
             } else {
                 list($this->transactionId, $this->bankUrl) = explode("|", $result);
             }
@@ -250,13 +253,13 @@ class TargetPayCore
             }
             return $this->bankUrl;
         } else {
-            $this->errorMessage = "TargetPay antwoordde: ".$result." | TargetPay responded with: ".$result;
+            $this->errorMessage = "Digiwallet antwoordde: ".$result." | Digiwallet responded with: ".$result;
             return false;
         }
     }
     
     /**
-     * Check transaction with TargetPay
+     * Check transaction with Digiwallet
      *
      * @param string $payMethodId
      *            Payment method's see above
@@ -268,6 +271,7 @@ class TargetPayCore
      */
     public function checkPayment($transactionId)
     {
+        $params = array();
         if (! $this->rtlo) {
             $this->errorMessage = self::ERR_NO_RTLO;
             return false;
@@ -281,7 +285,7 @@ class TargetPayCore
             "trxid=" . urlencode($transactionId) . "&" .
             "&once=0";
         
-        if($this->payMethod == 'BW') {
+        if ($this->payMethod == 'BW') {
             $params['checksum'] = md5($transactionId . $this->rtlo . $this->bwSalt);
         }
         
@@ -319,7 +323,8 @@ class TargetPayCore
 
             return true;
         }
-        if (trim($resultCode) == "000000 OK" || (substr(trim($resultCode), 0, 6) == "000000" && trim($additionalParam2) == 'Captured')) {
+        if (trim($resultCode) == "000000 OK" ||
+            (Tools::substr(trim($resultCode), 0, 6) == "000000" && trim($additionalParam2) == 'Captured')) {
             // AfterPay response
             $this->paidStatus = true;
 
@@ -338,7 +343,7 @@ class TargetPayCore
      * This function used to act as a redundant check on the validity of reports by checking IP addresses
      * Because this is bad practice and not necessary it is now removed
      */
-    public function checkReportValidity($post, $server)
+    public function checkReportValidity()
     {
         return true;
     }
@@ -397,10 +402,16 @@ class TargetPayCore
     
     public function getTax($rate = null)
     {
-        if(empty($rate)) return 4; // No tax
-        else if($rate>= 21) return 1;
-        else if($rate>= 6) return 2;
-        else return 3;
+        if (empty($rate)) {
+            return 4;
+        } // No tax
+        elseif ($rate>= 21) {
+            return 1;
+        } elseif ($rate>= 6) {
+            return 2;
+        } else {
+            return 3;
+        }
     }
     
     public function getBankId()
@@ -420,7 +431,7 @@ class TargetPayCore
     
     public function setCountryId($countryId)
     {
-        $this->countryId = strtolower(substr($countryId, 0, 2));
+        $this->countryId = Tools::strtolower(Tools::substr($countryId, 0, 2));
         return true;
     }
     
@@ -431,7 +442,7 @@ class TargetPayCore
     
     public function setDescription($description)
     {
-        $this->description = substr($description, 0, 32);
+        $this->description = Tools::substr($description, 0, 32);
         return true;
     }
     
@@ -445,9 +456,9 @@ class TargetPayCore
         $returnVal = '';
         if (! empty($this->errorMessage)) {
             if ($this->language == "nl" && strpos($this->errorMessage, " | ") !== false) {
-                list ($returnVal) = explode(" | ", $this->errorMessage, 2);
+                list($returnVal) = explode(" | ", $this->errorMessage, 2);
             } elseif ($this->language == "en" && strpos($this->errorMessage, " | ") !== false) {
-                list ($discard, $returnVal) = explode(" | ", $this->errorMessage, 2);
+                list(, $returnVal) = explode(" | ", $this->errorMessage, 2);
             } else {
                 $returnVal = $this->errorMessage;
             }
@@ -460,10 +471,10 @@ class TargetPayCore
         if (!$allowList) {
             return $this->language;
         } else {
-            if (in_array(strtoupper($this->language), $allowList)) {
-                return strtoupper($this->language);
+            if (in_array(Tools::strtoupper($this->language), $allowList)) {
+                return Tools::strtoupper($this->language);
             } else {
-                return $this->defaultLanguage;
+                return $defaultLanguage;
             }
         }
     }
@@ -525,7 +536,7 @@ class TargetPayCore
     
     public function setTransactionId($transactionId)
     {
-        $this->transactionId = substr($transactionId, 0, 32);
+        $this->transactionId = Tools::substr($transactionId, 0, 32);
         return true;
     }
     
@@ -576,14 +587,14 @@ class TargetPayCore
         curl_close($curl);
         
         $response = json_decode($response);
-        if(!empty($response->refundID) && $response->refundID > 0) {
+        if (!empty($response->refundID) && $response->refundID > 0) {
             return true;
-        }
-        else {
-            $this->errorMessage = (!empty($response->status) ? 'Error status: ' . $response->status . ' - ' : '') . $response->message;
+        } else {
+            $this->errorMessage = (!empty($response->status) ? 'Error status: ' . $response->status . ' - ' : '')
+                . $response->message;
             
             if (! empty($response->errors)) {
-                $arrError = [];
+                $arrError = array();
                 foreach ($response->errors as $errors) {
                     foreach ($errors as $error) {
                         $arrError[] = '- ' . $error;
@@ -629,12 +640,12 @@ class TargetPayCore
         curl_close($curl);
         
         $response = json_decode($response);
-        if(!empty($response->status)) {
+        if (!empty($response->status)) {
             $this->errorMessage =  'Error status: ' . $response->status . ' - ' . $response->message;
         }
         
         if (!empty($response->errors)) {
-            $arrError = [];
+            $arrError = array();
             foreach ($response->errors as $errors) {
                 foreach ($errors as $error) {
                     $arrError[] = '- ' . $error;
@@ -644,10 +655,9 @@ class TargetPayCore
             $this->errorMessage .= ":\n" . $errorMsg;
         }
         
-        if($this->errorMessage) {
+        if ($this->errorMessage) {
             return false;
-        }
-        else {
+        } else {
             return true;
         }
     }

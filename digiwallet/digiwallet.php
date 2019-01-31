@@ -1,22 +1,23 @@
 <?php
 /**
- * @file    Provides support for TargetPay iDEAL, Bancontact, Sofort Banking, Paysafecard and Creditcard
- * @author  idealplugins
- * @url     http://www.idealplugins.nl
+ * Activates iDEAL, Bancontact, Sofort Banking, Visa / Mastercard Credit cards, PaysafeCard, AfterPay, BankWire, PayPal and Refunds in Prestashop
+ * @author  DigiWallet.nl
+ * @copyright Copyright (C) 2018 e-plugins.nl
+ * @license   http://opensource.org/licenses/afl-3.0.php  Academic Free License (AFL 3.0)
+ * @url      http://www.e-plugins.nl
  */
+
 use PrestaShop\PrestaShop\Core\Payment\PaymentOption;
 use PrestaShop\PrestaShop\Adapter\Order\OrderPresenter;
-use Monolog\Logger;
 
 if (! defined('_PS_VERSION_')) {
     exit();
 }
 
-require_once ('core/targetpay.class.php');
+require_once('core/digiwallet.class.php');
 
-class Ps_Targetpay extends PaymentModule
+class Digiwallet extends PaymentModule
 {
-    
     const DEFAULT_RTLO = 93929;
     // you can obtain your api key in your organization dashboard on https://digiwallet.nl
     const DEFAULT_TOKEN = '';
@@ -28,23 +29,24 @@ class Ps_Targetpay extends PaymentModule
     
     public function __construct()
     {
-        $this->name = 'ps_targetpay';
+        $this->name = 'digiwallet';
         $this->tab = 'payments_gateways';
-        $this->version = '1.7.1.1'; 
+        $this->version = '1.0.0';
         $this->ps_versions_compliancy = array(
             'min' => '1.7.0.0',
             'max' => _PS_VERSION_
         );
-        $this->author = 'DigiWallet';
+        $this->author = 'DigiWallet.nl';
         $this->currencies = true;
         $this->currencies_mode = 'checkbox';
         $this->limited_currencies = array(
             'EUR'
         );
         $this->bootstrap = true;
+        $this->module_key = '6a09d2e96084ce4b10adea1687ca5b2d';
         parent::__construct();
-        $this->displayName = $this->l('DigiWallet Bank Payments');
-        $this->description = $this->l('Let the customer pay with popular payment services such as iDEAL (The Netherlands), Bancontact (Belgium), SOFORT Banking (Germany)');
+        $this->displayName = $this->l('Digiwallet for Prestashop');
+        $this->description = $this->l('Activates iDEAL, Bancontact, Sofort Banking, Visa / Mastercard Credit cards, PaysafeCard, AfterPay, BankWire, PayPal and Refunds in Prestashop');
         if (! count(Currency::checkPaymentCurrencies($this->id))) {
             $this->warning = $this->l('No currency has been set for this module.');
         }
@@ -61,16 +63,16 @@ class Ps_Targetpay extends PaymentModule
             return false;
         }
         
-        Configuration::updateValue('TARGETPAY_RTLO', self::DEFAULT_RTLO); // Default TargetPay
-        Configuration::updateValue('TARGETPAY_TOKEN', self::DEFAULT_TOKEN); // Default TargetPay
+        Configuration::updateValue('DIGIWALLET_RTLO', self::DEFAULT_RTLO); // Default Digiwallet
+        Configuration::updateValue('DIGIWALLET_TOKEN', self::DEFAULT_TOKEN); // Default Digiwallet
         $listMethods = $this->getListMethods();
         foreach ($listMethods as $id => $method) {
-            Configuration::updateValue('ENABLE_METHOD_' . $id, $method['enabled']);
-            Configuration::updateValue('ORDER_METHOD_' . $id, $method['order']);
+            Configuration::updateValue('DW_ENABLE_METHOD_' . $id, $method['enabled']);
+            Configuration::updateValue('DW_ORDER_METHOD_' . $id, $method['order']);
         }
         if (! parent::install()
-            || ! $this->createTargetpayIdealTable()
-            || ! $this->updateTargetpayIdealTable()
+            || ! $this->createDigiwalletTable()
+            || ! $this->updateDigiwalletTable()
             || ! $this->createDigiwalletStatus()
             || ! $this->registerHook('displayHeader')
             || ! $this->registerHook('displayBackOfficeHeader')
@@ -79,10 +81,10 @@ class Ps_Targetpay extends PaymentModule
             || ! $this->registerHook('actionOrderSlipAdd')  // for refund
             || !$this->registerHook('cancelProduct')
             || Currency::refreshCurrencies()) {
-                return false;
-            }
+            return false;
+        }
             
-            return true;
+        return true;
     }
     
     /**
@@ -92,13 +94,13 @@ class Ps_Targetpay extends PaymentModule
      */
     public function uninstall()
     {
-        Configuration::deleteByName('TARGETPAY_RTLO');
+        Configuration::deleteByName('DIGIWALLET_RTLO');
         Configuration::deleteByName('BANK_LIST_MODE');
         Configuration::deleteByName('COUNTRY_LIST_MODE');
-        $listMethods = $this->getListMethods();
-        foreach ($listMethods as $id => $method) {
-            Configuration::deleteByName('ENABLE_METHOD_' . $id);
-            Configuration::deleteByName('ORDER_METHOD_' . $id);
+        $listMethods = array_keys($this->getListMethods());
+        foreach ($listMethods as $id) {
+            Configuration::deleteByName('DW_ENABLE_METHOD_' . $id);
+            Configuration::deleteByName('DW_ORDER_METHOD_' . $id);
         }
         
         return parent::uninstall();
@@ -117,10 +119,10 @@ class Ps_Targetpay extends PaymentModule
      * status: init:0, success:1, fail:2
      * via
      */
-    public function createTargetpayIdealTable()
+    public function createDigiwalletTable()
     {
         $db = Db::getInstance();
-        $query = "CREATE TABLE IF NOT EXISTS `" . _DB_PREFIX_ . "targetpay_ideal` (
+        $query = "CREATE TABLE IF NOT EXISTS `" . _DB_PREFIX_ . "digiwallet` (
             `id` INT NOT NULL AUTO_INCREMENT PRIMARY KEY ,
             `order_id` int(11) NULL DEFAULT '0',
             `cart_id` int(11) NOT NULL DEFAULT '0',
@@ -141,14 +143,13 @@ class Ps_Targetpay extends PaymentModule
      * add field
      * @return boolean
      */
-    public function updateTargetpayIdealTable()
+    public function updateDigiwalletTable()
     {
         $db = Db::getInstance();
-        $sql = "SHOW COLUMNS FROM `"._DB_PREFIX_."targetpay_ideal` LIKE 'paid_amount'";
+        $sql = "SHOW COLUMNS FROM `"._DB_PREFIX_."digiwallet` LIKE 'paid_amount'";
         $results = $db->ExecuteS($sql);
-        if (empty($results))
-        {
-            $db->Execute( "ALTER TABLE `" . _DB_PREFIX_ . "targetpay_ideal` ADD `paid_amount` decimal(11,2) NOT NULL DEFAULT '0' AFTER `paymethod`;");
+        if (empty($results)) {
+            $db->Execute("ALTER TABLE `" . _DB_PREFIX_ . "digiwallet` ADD `paid_amount` decimal(11,2) NOT NULL DEFAULT '0' AFTER `paymethod`;");
         }
         return true;
     }
@@ -158,8 +159,8 @@ class Ps_Targetpay extends PaymentModule
      */
     public function createDigiwalletStatus()
     {
-        $statuses = [
-            [
+        $statuses = array(
+            array(
                 'module_name' => self::DIGIWALLET_BANKWIRE_PARTIAL,
                 'invoice' => 1,
                 'send_email' => 0,
@@ -169,8 +170,8 @@ class Ps_Targetpay extends PaymentModule
                 'paid' => 1,
                 'title' => 'Digiwallet Partial Payment Received',
                 'template' => 'bankwire'
-            ],
-            [
+            ),
+            array(
                 'module_name' => self::DIGIWALLET_PENDING,
                 'invoice' => 0,
                 'send_email' => 0,
@@ -180,8 +181,8 @@ class Ps_Targetpay extends PaymentModule
                 'paid' => 0,
                 'title' => 'Digiwallet Pending',
                 'template' => ''
-            ],
-        ];
+            ),
+        );
         foreach ($statuses as $status) {
             $db = Db::getInstance();
             $query = '
@@ -205,7 +206,8 @@ class Ps_Targetpay extends PaymentModule
                 $db->Execute($query);
                 $statusID = $db->Insert_ID();
                 foreach (Language::getLanguages() as $language) {
-                    $query = sprintf('
+                    $query = sprintf(
+                        '
                     INSERT INTO `' . _DB_PREFIX_ . 'order_state_lang`
                     SET
                         `id_order_state` = %d,
@@ -215,7 +217,7 @@ class Ps_Targetpay extends PaymentModule
                     ',
                         $statusID,
                         $language['id_lang']
-                        );
+                    );
                     $db->Execute($query);
                 }
                 $digiwalletIcon = dirname(__FILE__).'/logo.gif';
@@ -238,21 +240,21 @@ class Ps_Targetpay extends PaymentModule
         $output = null;
         
         if (Tools::isSubmit('submit' . $this->name)) {
-            $RTLO = strval(Tools::getValue('TARGETPAY_RTLO'));
-            $Token = strval(Tools::getValue('TARGETPAY_TOKEN'));
+            $RTLO = (string)(Tools::getValue('DIGIWALLET_RTLO'));
+            $Token = (string)(Tools::getValue('DIGIWALLET_TOKEN'));
             if (! $RTLO || empty($RTLO) || ! Validate::isGenericName($RTLO) || ! Validate::isUnsignedInt($RTLO)) {
                 $output .= $this->displayError($this->l('Invalid RTLO. Only numbers allowed.'));
             } else {
-                Configuration::updateValue('TARGETPAY_RTLO', $RTLO);
-                Configuration::updateValue('TARGETPAY_TOKEN', $Token);
-                $listMethods = $this->getListMethods();
-                foreach ($listMethods as $id => $method) {
-                    $enabled = strval(Tools::getValue('ENABLE_METHOD_' . $id));
-                    Configuration::updateValue('ENABLE_METHOD_' . $id, $enabled ? 'yes' : 'no');
-                    Configuration::updateValue('ORDER_METHOD_' . $id, strval(Tools::getValue('ORDER_METHOD_' . $id)));
+                Configuration::updateValue('DIGIWALLET_RTLO', $RTLO);
+                Configuration::updateValue('DIGIWALLET_TOKEN', $Token);
+                $listMethods = array_keys($this->getListMethods());
+                foreach ($listMethods as $id) {
+                    $enabled = (string)(Tools::getValue('DW_ENABLE_METHOD_' . $id));
+                    Configuration::updateValue('DW_ENABLE_METHOD_' . $id, $enabled ? 'yes' : 'no');
+                    Configuration::updateValue('DW_ORDER_METHOD_' . $id, (string)(Tools::getValue('DW_ORDER_METHOD_' . $id)));
                 }
-                $bankListMode = strval(Tools::getValue('BANK_LIST_MODE'));
-                $countryListMode = strval(Tools::getValue('COUNTRY_LIST_MODE'));
+                $bankListMode = (string)(Tools::getValue('BANK_LIST_MODE'));
+                $countryListMode = (string)(Tools::getValue('COUNTRY_LIST_MODE'));
                 Configuration::updateValue('BANK_LIST_MODE', ($bankListMode == 1) ? '1' : '0');
                 Configuration::updateValue('COUNTRY_LIST_MODE', ($countryListMode == 1) ? '1' : '0');
                 $output .= $this->displayConfirmation($this->l('Settings updated'));
@@ -301,14 +303,14 @@ class Ps_Targetpay extends PaymentModule
         );
         
         // Load current value
-        $helper->fields_value['TARGETPAY_RTLO'] = Configuration::get('TARGETPAY_RTLO');
-        $helper->fields_value['TARGETPAY_TOKEN'] = Configuration::get('TARGETPAY_TOKEN');
+        $helper->fields_value['DIGIWALLET_RTLO'] = Configuration::get('DIGIWALLET_RTLO');
+        $helper->fields_value['DIGIWALLET_TOKEN'] = Configuration::get('DIGIWALLET_TOKEN');
         $helper->fields_value['BANK_LIST_MODE'] = Configuration::get('BANK_LIST_MODE');
         $helper->fields_value['COUNTRY_LIST_MODE'] = Configuration::get('COUNTRY_LIST_MODE');
         $listMethods = $this->getListMethods();
         foreach ($listMethods as $id => $method) {
-            $helper->fields_value['ENABLE_METHOD_' . $id] = $method['enabled'] == 'yes' ? 1 : 0;
-            $helper->fields_value['ORDER_METHOD_' . $id] = $method['order'];
+            $helper->fields_value['DW_ENABLE_METHOD_' . $id] = $method['enabled'] == 'yes' ? 1 : 0;
+            $helper->fields_value['DW_ORDER_METHOD_' . $id] = $method['order'];
         }
         return $helper->generateForm(array(
             $this->getConfigForm()
@@ -332,7 +334,7 @@ class Ps_Targetpay extends PaymentModule
                 'col' => 3,
                 'type' => 'text',
                 'desc' => $this->l('Enter a valid RTLO'),
-                'name' => 'TARGETPAY_RTLO',
+                'name' => 'DIGIWALLET_RTLO',
                 'required' => true,
                 'label' => $this->l('RTLO')
             ),
@@ -340,7 +342,7 @@ class Ps_Targetpay extends PaymentModule
                 'col' => 3,
                 'type' => 'text',
                 'desc' => $this->l('Enter Digiwallet token, register one at digiwallet.nl'),
-                'name' => 'TARGETPAY_TOKEN',
+                'name' => 'DIGIWALLET_TOKEN',
                 'required' => false,
                 'label' => $this->l('Digiwallet Token')
             ),
@@ -350,7 +352,7 @@ class Ps_Targetpay extends PaymentModule
             $arrInputs[] = array(
                 'type' => 'switch',
                 'label' => $method['name'],
-                'name' => 'ENABLE_METHOD_' . $id,
+                'name' => 'DW_ENABLE_METHOD_' . $id,
                 'is_bool' => true,
                 'desc' => $this->l($method['extra_text']),
                 'values' => array(
@@ -371,7 +373,7 @@ class Ps_Targetpay extends PaymentModule
                 'required' => true,
                 'desc' => 'Order ' . $method['name'],
                 'type' => 'html',
-                'html_content' => '<input class="tp-sort-order" min="1"  type="number" value="' . $method['order'] . '" name="' . 'ORDER_METHOD_' . $id . '">'
+                'html_content' => '<input class="tp-sort-order" min="1"  type="number" value="' . $method['order'] . '" name="' . 'DW_ORDER_METHOD_' . $id . '">'
             );
         }
         $arrInputs[] = array(
@@ -433,7 +435,7 @@ class Ps_Targetpay extends PaymentModule
     
     /**
      * Check currency of cart.
-     * TargetPay is only accept EUR right now
+     * Digiwallet is only accept EUR right now
      *
      * @param unknown $cart
      * @return boolean
@@ -469,7 +471,7 @@ class Ps_Targetpay extends PaymentModule
      */
     public function hookPaymentOptions($params)
     {
-        $payment_options = [];
+        $payment_options = array();
         
         if (!$this->active) {
             return;
@@ -479,27 +481,27 @@ class Ps_Targetpay extends PaymentModule
             return;
         }
         
-        $rtlo = Configuration::get('TARGETPAY_RTLO');
+        $rtlo = Configuration::get('DIGIWALLET_RTLO');
         $listMethods = $this->getListMethods();
         foreach ($listMethods as $id => $method) {
-            $setInputs = [
-                'bankID' => [
+            $setInputs = array(
+                'bankID' => array(
                     'name' => 'method',
                     'type' => 'hidden',
                     'value' => $id,
-                ]];
+                ));
             $addInfo = '';
-            if(($id == 'IDE' && Configuration::get('BANK_LIST_MODE') != 1 ) || ($id == 'DEB' && Configuration::get('COUNTRY_LIST_MODE') != 1)) {
+            if (($id == 'IDE' && Configuration::get('BANK_LIST_MODE') != 1) || ($id == 'DEB' && Configuration::get('COUNTRY_LIST_MODE') != 1)) {
                 $templateVars = $this->getTemplateVars($id, $rtlo);
                 $this->smarty->assign(
                     $templateVars
-                    );
-                $addInfo = $this->fetch('module:ps_targetpay/views/templates/front/payment_infos.tpl');
-                $setInputs['option'] = [
+                );
+                $addInfo = $this->fetch('module:digiwallet/views/templates/front/payment_infos.tpl');
+                $setInputs['option'] = array(
                     'name' => 'option',
                     'type' => 'hidden',
                     'value' => $templateVars['selected']
-                ];
+                );
             }
             
             if ($method['enabled'] == 'yes') {
@@ -523,17 +525,18 @@ class Ps_Targetpay extends PaymentModule
      */
     public function getTemplateVars($method, $rtlo)
     {
-        $targetpayObj = new TargetPayCore($method, $rtlo);
-        if($method == 'IDE')
-            $list = $targetpayObj->getBankList();
-        else
-            $list = $targetpayObj->getCountryList();
+        $digiwallet = new DigiwalletCore($method, $rtlo);
+        if ($method == 'IDE') {
+            $list = $digiwallet->getBankList();
+        } else {
+            $list = $digiwallet->getCountryList();
+        }
     
-        return [
+        return array(
             'optionListArr' => $list,
             'selected' => key($list),
             'method' => $method
-        ];
+        );
     }
     
     /**
@@ -551,24 +554,23 @@ class Ps_Targetpay extends PaymentModule
         $order = $params['order'];
         if ($order->getCurrentOrderState()->id == Configuration::get('PS_OS_PAYMENT')) {
             $this->smarty->assign('status', 'ok');
-        } else
-            if ($order->getCurrentOrderState()->id == Configuration::get('PS_OS_CHEQUE')) {
-                $this->smarty->assign('status', 'processing');
-            } else {
-                $this->smarty->assign('status', 'error');
-            }
-            $order_presenter = new OrderPresenter();
-            $this->smarty->assign(array(
+        } elseif ($order->getCurrentOrderState()->id == Configuration::get('PS_OS_CHEQUE')) {
+            $this->smarty->assign('status', 'processing');
+        } else {
+            $this->smarty->assign('status', 'error');
+        }
+        $order_presenter = new OrderPresenter();
+        $this->smarty->assign(array(
                 'shop_name' => $this->context->shop->name,
                 'order' => $order,
                 'reorderUrl' => $order_presenter->present($order)['details']['reorder_url'],
                 'total' => Tools::displayPrice($params['order']->getOrdersTotalPaid(), new Currency($params['order']->id_currency), false)
             ));
-            return $this->display(__FILE__, 'views/templates/hook/payment_return.tpl');
+        return $this->display(__FILE__, 'views/templates/hook/payment_return.tpl');
     }
     
     /**
-     * Get transaction info in targetpay_ideal table
+     * Get transaction info in digiwallet table
      *
      * @param string $trxid
      * @return boolean|object|NULL
@@ -576,7 +578,7 @@ class Ps_Targetpay extends PaymentModule
     public function selectTransaction($trxid)
     {
         $sql = sprintf("SELECT `id`, `cart_id`, `rtlo`,`order_id`, `paymethod`, `transaction_id`, `description`, `amount`
-            FROM `" . _DB_PREFIX_ . "targetpay_ideal`
+            FROM `" . _DB_PREFIX_ . "digiwallet`
             WHERE `transaction_id`= '%s'
             ORDER BY `id` DESC", $trxid); // Choose most recent to minimize collision risk because we lack a paymethod field here!
         $result = Db::getInstance()->getRow($sql);
@@ -608,21 +610,23 @@ class Ps_Targetpay extends PaymentModule
     {
         $orderId = (int) $transactionInfoArr['order_id'];
         $order = new Order($orderId);
-        if (! $order)
+        if (! $order) {
             return ("Order is not found");
+        }
         
-        if ($order->current_state == Configuration::get('PS_OS_PAYMENT'))
+        if ($order->current_state == Configuration::get('PS_OS_PAYMENT')) {
             return ("order $orderId had been done");
+        }
         
-        $targetpayObj = new TargetPayCore($transactionInfoArr["paymethod"], $transactionInfoArr["rtlo"], "nl");
-        $targetpayObj->checkPayment($transactionInfoArr['transaction_id']);
-        $updateArr = [];
+        $digiwallet = new DigiwalletCore($transactionInfoArr["paymethod"], $transactionInfoArr["rtlo"], "nl");
+        $digiwallet->checkPayment($transactionInfoArr['transaction_id']);
+        $updateArr = array();
         $paymentIsPartial = false;
         $amountPaid = null;
-        if ($targetpayObj->getPaidStatus()) {
+        if ($digiwallet->getPaidStatus()) {
             $amountPaid = $transactionInfoArr['amount'];
-            if($transactionInfoArr["paymethod"] == 'BW') {
-                $consumber_info = $targetpayObj->getConsumerInfo();
+            if ($transactionInfoArr["paymethod"] == 'BW') {
+                $consumber_info = $digiwallet->getConsumerInfo();
                 if (!empty($consumber_info) && $consumber_info['bw_paid_amount'] > 0) {
                     $amountPaid = number_format($consumber_info['bw_paid_amount'] / 100, 5);
                     if ($consumber_info['bw_paid_amount'] < $consumber_info['bw_due_amount']) {
@@ -645,8 +649,8 @@ class Ps_Targetpay extends PaymentModule
             }
         } else {
             $state = Configuration::get('PS_OS_ERROR');
-            $updateArr["description"] = 'Error:' . $targetpayObj->getErrorMessage();
-            $retMsg = $updateArr["description"] = 'Error:' . $targetpayObj->getErrorMessage();
+            $updateArr["description"] = 'Error:' . $digiwallet->getErrorMessage();
+            $retMsg = $updateArr["description"] = 'Error:' . $digiwallet->getErrorMessage();
         }
         
         $history = new OrderHistory();
@@ -666,7 +670,7 @@ class Ps_Targetpay extends PaymentModule
     }
     
     /**
-     * Update transaction info in targetpay_ideal table
+     * Update transaction info in digiwallet table
      *
      * @param array $updateArr
      * @param string $trxid
@@ -679,11 +683,10 @@ class Ps_Targetpay extends PaymentModule
         }
         $fields = rtrim($fields, ", ");
         
-        $sql = sprintf("UPDATE `" . _DB_PREFIX_ . "targetpay_ideal` SET
+        $sql = sprintf("UPDATE `" . _DB_PREFIX_ . "digiwallet` SET
             " . $fields . "
             WHERE `transaction_id`= '%s'", $trxid);
-        Db::getInstance()->execute($sql);
-        return;
+        return Db::getInstance()->execute($sql);
     }
     
     public function getListMethods()
@@ -691,54 +694,54 @@ class Ps_Targetpay extends PaymentModule
         $listMethods = array(
             'AFP' => array(
                 'name' => 'Afterpay',
-                'enabled' => Configuration::get('ENABLE_METHOD_AFP') ? Configuration::get('ENABLE_METHOD_AFP'): 'no',
+                'enabled' => Configuration::get('DW_ENABLE_METHOD_AFP') ? Configuration::get('DW_ENABLE_METHOD_AFP'): 'no',
                 'extra_text' => $this->l('Enable Afterpay method'),
-                'order' => Configuration::get('ORDER_METHOD_AFP') ? Configuration::get('ORDER_METHOD_AFP'): 1
+                'order' => Configuration::get('DW_ORDER_METHOD_AFP') ? Configuration::get('DW_ORDER_METHOD_AFP'): 1
             ),
             "MRC" => array(
                 'name' => 'Bancontact',
-                'enabled' => Configuration::get('ENABLE_METHOD_MRC') ? Configuration::get('ENABLE_METHOD_MRC'): 'yes',
+                'enabled' => Configuration::get('DW_ENABLE_METHOD_MRC') ? Configuration::get('DW_ENABLE_METHOD_MRC'): 'yes',
                 'extra_text' => $this->l('Enable Bancontact method'),
-                'order' => Configuration::get('ORDER_METHOD_MRC') ? Configuration::get('ORDER_METHOD_MRC'): 1
+                'order' => Configuration::get('DW_ORDER_METHOD_MRC') ? Configuration::get('DW_ORDER_METHOD_MRC'): 1
             ),
             'BW' => array(
                 'name' => 'Bankwire',
-                'enabled' => Configuration::get('ENABLE_METHOD_BW') ? Configuration::get('ENABLE_METHOD_BW'): 'no',
+                'enabled' => Configuration::get('DW_ENABLE_METHOD_BW') ? Configuration::get('DW_ENABLE_METHOD_BW'): 'no',
                 'extra_text' => $this->l('Enable Bankwire method'),
-                'order' => Configuration::get('ORDER_METHOD_BW') ? Configuration::get('ORDER_METHOD_BW'): 1
+                'order' => Configuration::get('DW_ORDER_METHOD_BW') ? Configuration::get('DW_ORDER_METHOD_BW'): 1
             ),
             'CC' => array(
                 'name' => 'Creditcard',
-                'enabled' => Configuration::get('ENABLE_METHOD_CC') ? Configuration::get('ENABLE_METHOD_CC'): 'no',
-                'extra_text' => $this->l('Enable Creditcard method (only possible when creditcard is activated on your targetpay account)'),
-                'order' => Configuration::get('ORDER_METHOD_CC') ? Configuration::get('ORDER_METHOD_CC'): 1
+                'enabled' => Configuration::get('DW_ENABLE_METHOD_CC') ? Configuration::get('DW_ENABLE_METHOD_CC'): 'no',
+                'extra_text' => $this->l('Enable Creditcard method (only possible when creditcard is activated on your digiwallet account)'),
+                'order' => Configuration::get('DW_ORDER_METHOD_CC') ? Configuration::get('DW_ORDER_METHOD_CC'): 1
             ),
             "IDE" => array(
                 'name' => 'iDEAL',
-                'enabled' => Configuration::get('ENABLE_METHOD_IDE') ? Configuration::get('ENABLE_METHOD_IDE'): 'yes',
+                'enabled' => Configuration::get('DW_ENABLE_METHOD_IDE') ? Configuration::get('DW_ENABLE_METHOD_IDE'): 'yes',
                 'extra_text' => $this->l('Enable iDEAL method'),
-                'order' => Configuration::get('ORDER_METHOD_IDE') ? Configuration::get('ORDER_METHOD_IDE'): 1
+                'order' => Configuration::get('DW_ORDER_METHOD_IDE') ? Configuration::get('DW_ORDER_METHOD_IDE'): 1
             ),
             'PYP' => array(
                 'name' => 'Paypal',
-                'enabled' => Configuration::get('ENABLE_METHOD_PYP') ? Configuration::get('ENABLE_METHOD_PYP'): 'no',
+                'enabled' => Configuration::get('DW_ENABLE_METHOD_PYP') ? Configuration::get('DW_ENABLE_METHOD_PYP'): 'no',
                 'extra_text' => $this->l('Enable Paypal method'),
-                'order' => Configuration::get('ORDER_METHOD_PYP') ? Configuration::get('ORDER_METHOD_PYP'): 1
+                'order' => Configuration::get('DW_ORDER_METHOD_PYP') ? Configuration::get('DW_ORDER_METHOD_PYP'): 1
             ),
             'WAL' => array(
                 'name' => 'Paysafecard',
-                'enabled' => Configuration::get('ENABLE_METHOD_WAL') ? Configuration::get('ENABLE_METHOD_WAL'): 'yes',
+                'enabled' => Configuration::get('DW_ENABLE_METHOD_WAL') ? Configuration::get('DW_ENABLE_METHOD_WAL'): 'yes',
                 'extra_text' => $this->l('Enable Paysafecard method'),
-                'order' => Configuration::get('ORDER_METHOD_WAL') ? Configuration::get('ORDER_METHOD_WAL'): 1
+                'order' => Configuration::get('DW_ORDER_METHOD_WAL') ? Configuration::get('DW_ORDER_METHOD_WAL'): 1
             ),
             'DEB' => array(
                 'name' => 'Sofort Banking',
-                'enabled' => Configuration::get('ENABLE_METHOD_DEB') ? Configuration::get('ENABLE_METHOD_DEB'): 'yes',
+                'enabled' => Configuration::get('DW_ENABLE_METHOD_DEB') ? Configuration::get('DW_ENABLE_METHOD_DEB'): 'yes',
                 'extra_text' => $this->l('Enable Sofort Banking method'),
-                'order' => Configuration::get('ORDER_METHOD_DEB') ? Configuration::get('ORDER_METHOD_DEB'): 1
+                'order' => Configuration::get('DW_ORDER_METHOD_DEB') ? Configuration::get('DW_ORDER_METHOD_DEB'): 1
             )
         );
-        uasort($listMethods, function($a, $b) {
+        uasort($listMethods, function ($a, $b) {
             $retval = $a['order'] - $b['order'];
             if ($retval == 0) {
                 $retval = strcmp($a['name'], $b['name']);
@@ -746,7 +749,7 @@ class Ps_Targetpay extends PaymentModule
             return $retval;
         });
             
-            return $listMethods;
+        return $listMethods;
     }
     
     /**
@@ -765,52 +768,63 @@ class Ps_Targetpay extends PaymentModule
      */
     public function refund($params)
     {
-        if (empty($params['productList']))
+        if (empty($params['productList'])) {
             return false;
+        }
             
-            $order = $params['order'];
-            $orderId = $order->id;
-            $customer = new Customer($order->id_customer);
+        $order = $params['order'];
+        $orderId = $order->id;
+        $customer = new Customer($order->id_customer);
             
-            $sql = sprintf("SELECT `rtlo`,`paymethod`, `transaction_id`
-            FROM `" . _DB_PREFIX_ . "targetpay_ideal`
+        $sql = sprintf("SELECT `rtlo`,`paymethod`, `transaction_id`
+            FROM `" . _DB_PREFIX_ . "digiwallet`
             WHERE `order_id`= '%s'", $orderId);
-            $result = Db::getInstance()->getRow($sql);
+        $result = Db::getInstance()->getRow($sql);
             
-            $refundAmount = 0;
-            foreach ($params['productList'] as $product) {
-                $refundAmount += $product['quantity'] * $product['amount'];
-            }
+        $refundAmount = 0;
+        foreach ($params['productList'] as $product) {
+            $refundAmount += $product['quantity'] * $product['amount'];
+        }
             
-            if ($refundAmount == 0)
-                return false;
+        if ($refundAmount == 0) {
+            return false;
+        }
                 
-                $dataRefund = array(
+        $dataRefund = array(
                     'paymethodID' => $result['paymethod'],
                     'transactionID' => $result['transaction_id'],
-                    'amount' => intval(floatval($refundAmount) * 100),
+                    'amount' => (int)((float)($refundAmount) * 100),
                     'description' => 'OrderId: ' . $orderId . ', Amount: ' . $refundAmount,
                     'internalNote' => 'Internal note - OrderId: ' . $orderId . ', Amount: ' . $refundAmount . ', Customer Email: ' . $customer->email,
                     'consumerName' => $customer->firstname . ' ' . $customer->lastname
                 );
                 
-                $targetPay = new TargetPayCore($result['paymethod'], $result['rtlo']);
+        $digiwallet = new DigiwalletCore($result['paymethod'], $result['rtlo']);
                 
-                if (! $targetPay->refund(Configuration::get('TARGETPAY_TOKEN'), $dataRefund)) {
-                    PrestaShopLogger::addLog($targetPay->getErrorMessage(), 3);
-                    $this->context->controller->errors[] = ($targetPay->getErrorMessage());
-                }
+        if (! $digiwallet->refund(Configuration::get('DIGIWALLET_TOKEN'), $dataRefund)) {
+            PrestaShopLogger::addLog($digiwallet->getErrorMessage(), 3);
+            $this->context->controller->errors[] = ($digiwallet->getErrorMessage());
+        }
     }
     
     public function hookCancelProduct($params)
     {
-        echo __FUNCTION__; die;
+        echo __FUNCTION__;
+        die;
     }
     
-    public function validateOrder($id_cart, $id_order_state, $amount_paid, $payment_method = 'Unknown',
-        $message = null, $extra_vars = array(), $currency_special = null, $dont_touch_amount = false,
-        $secure_key = false, Shop $shop = null)
-    {
+    public function validateOrder(
+        $id_cart,
+        $id_order_state,
+        $amount_paid,
+        $payment_method = 'Unknown',
+        $message = null,
+        $extra_vars = array(),
+        $currency_special = null,
+        $dont_touch_amount = false,
+        $secure_key = false,
+        Shop $shop = null
+    ) {
         if (self::DEBUG_MODE) {
             PrestaShopLogger::addLog('PaymentModule::validateOrder - Function called', 1, null, 'Cart', (int)$id_cart, true);
         }
@@ -858,7 +872,8 @@ class Ps_Targetpay extends PaymentModule
             // If some delivery options are not defined, or not valid, use the first valid option
             foreach ($delivery_option_list as $id_address => $package) {
                 if (!isset($cart_delivery_option[$id_address]) || !array_key_exists($cart_delivery_option[$id_address], $package)) {
-                    foreach ($package as $key => $val) {
+                    $package = array_keys($package);
+                    foreach ($package as $key) {
                         $cart_delivery_option[$id_address] = $key;
                         break;
                     }
@@ -1057,9 +1072,9 @@ class Ps_Targetpay extends PaymentModule
             }
             
             // Next !
-            $only_one_gift = false;
+            //$only_one_gift = false;
             $cart_rule_used = array();
-            $products = $this->context->cart->getProducts();
+            //$products = $this->context->cart->getProducts();
             
             // Make sure CartRule caches are empty
             CartRule::cleanCache();
@@ -1093,9 +1108,9 @@ class Ps_Targetpay extends PaymentModule
                     //$orderDetail->createList($order, $this->context->cart, $id_order_state);
                     
                     // Construct order detail table for the email
-                    $products_list = '';
+                    //$products_list = '';
                     $virtual_product = true;
-                    
+                    $specific_price = null;
                     $product_var_tpl_list = array();
                     foreach ($order->product_list as $product) {
                         $price = Product::getPriceStatic((int)$product['id_product'], false, ($product['id_product_attribute'] ? (int)$product['id_product_attribute'] : null), 6, null, false, true, $product['cart_quantity'], false, (int)$order->id_customer, (int)$order->id_cart, (int)$order->{Configuration::get('PS_TAX_ADDRESS_TYPE')}, $specific_price, true, true, null, true, $product['id_customization']);
@@ -1181,9 +1196,9 @@ class Ps_Targetpay extends PaymentModule
                             unset($voucher->id);
                             
                             // Set a new voucher code
-                            $voucher->code = empty($voucher->code) ? substr(md5($order->id.'-'.$order->id_customer.'-'.$cart_rule['obj']->id), 0, 16) : $voucher->code.'-2';
+                            $voucher->code = empty($voucher->code) ? Tools::substr()(md5($order->id.'-'.$order->id_customer.'-'.$cart_rule['obj']->id), 0, 16) : $voucher->code.'-2';
                             if (preg_match('/\-([0-9]{1,2})\-([0-9]{1,2})$/', $voucher->code, $matches) && $matches[1] == $matches[2]) {
-                                $voucher->code = preg_replace('/'.$matches[0].'$/', '-'.(intval($matches[1]) + 1), $voucher->code);
+                                $voucher->code = preg_replace('/'.$matches[0].'$/', '-'.((int)($matches[1]) + 1), $voucher->code);
                             }
                             
                             // Set the new voucher value
@@ -1237,12 +1252,18 @@ class Ps_Targetpay extends PaymentModule
                                         array($order->reference),
                                         'Emails.Subject',
                                         $orderLanguage->locale
-                                        ),
+                                    ),
                                     $params,
                                     $this->context->customer->email,
                                     $this->context->customer->firstname.' '.$this->context->customer->lastname,
-                                    null, null, null, null, _PS_MAIL_DIR_, false, (int)$order->id_shop
-                                    );
+                                    null,
+                                    null,
+                                    null,
+                                    null,
+                                    _PS_MAIL_DIR_,
+                                    false,
+                                    (int)$order->id_shop
+                                );
                             }
                             
                             $values['tax_incl'] = $order->total_products_wt - $total_reduction_value_ti;
@@ -1355,7 +1376,7 @@ class Ps_Targetpay extends PaymentModule
                     $order->updateOrderDetailTax();
                 } else {
                     $error = $this->trans('Order creation failed', array(), 'Admin.Payment.Notification');
-                    PrestaShopLogger::addLog($error, 4, '0000002', 'Cart', intval($order->id_cart));
+                    PrestaShopLogger::addLog($error, 4, '0000002', 'Cart', (int)($order->id_cart));
                     die($error);
                 }
             } // End foreach $order_detail_list
@@ -1372,7 +1393,7 @@ class Ps_Targetpay extends PaymentModule
             return true;
         } else {
             $error = $this->trans('Cart cannot be loaded or an order has already been placed using this cart', array(), 'Admin.Payment.Notification');
-            PrestaShopLogger::addLog($error, 4, '0000001', 'Cart', intval($this->context->cart->id));
+            PrestaShopLogger::addLog($error, 4, '0000001', 'Cart', (int)($this->context->cart->id));
             die($error);
         }
     }
@@ -1380,11 +1401,12 @@ class Ps_Targetpay extends PaymentModule
     public function sendEmailConfirm($order, $extra_vars = null)
     {
         if ($order->current_state != Configuration::get('PS_OS_ERROR') && $order->current_state != Configuration::get('PS_OS_CANCELED') && $this->context->customer->id) {
-            $products_list = '';
+            //$products_list = '';
             $virtual_product = true;
             $order_status = new OrderState((int)$order->current_state, (int)$this->context->language->id);
             $carrier = new Carrier($order->id_carrier);
             $product_var_tpl_list = array();
+            $specific_price = null;
             foreach ($order->getProducts() as $product) {
                 $price = Product::getPriceStatic((int)$product['id_product'], false, ($product['product_attribute_id'] ? (int)$product['product_attribute_id'] : null), 6, null, false, true, $product['product_quantity'], false, (int)$order->id_customer, (int)$order->id_cart, (int)$order->{Configuration::get('PS_TAX_ADDRESS_TYPE')}, $specific_price, true, true, null, true, $product['id_customization']);
                 $price_wt = Product::getPriceStatic((int)$product['id_product'], true, ($product['product_attribute_id'] ? (int)$product['product_attribute_id'] : null), 2, null, false, true, $product['product_quantity'], false, (int)$order->id_customer, (int)$order->id_cart, (int)$order->{Configuration::get('PS_TAX_ADDRESS_TYPE')}, $specific_price, true, true, null, true, $product['id_customization']);
@@ -1463,47 +1485,6 @@ class Ps_Targetpay extends PaymentModule
                     continue;
                 }
                 
-                // IF
-                //  This is not multi-shipping
-                //  The value of the voucher is greater than the total of the order
-                //  Partial use is allowed
-                //  This is an "amount" reduction, not a reduction in % or a gift
-                // THEN
-                //  The voucher is cloned with a new value corresponding to the remainder
-                if (count($order_list) == 1 && $values['tax_incl'] > ($order->total_products_wt - $total_reduction_value_ti) && $cart_rule['obj']->partial_use == 1 && $cart_rule['obj']->reduction_amount > 0) {
-                    // Create a new voucher from the original
-                    $voucher = new CartRule((int)$cart_rule['obj']->id); // We need to instantiate the CartRule without lang parameter to allow saving it
-                    unset($voucher->id);
-                    
-                    // Set a new voucher code
-                    $voucher->code = empty($voucher->code) ? substr(md5($order->id.'-'.$order->id_customer.'-'.$cart_rule['obj']->id), 0, 16) : $voucher->code.'-2';
-                    if (preg_match('/\-([0-9]{1,2})\-([0-9]{1,2})$/', $voucher->code, $matches) && $matches[1] == $matches[2]) {
-                        $voucher->code = preg_replace('/'.$matches[0].'$/', '-'.(intval($matches[1]) + 1), $voucher->code);
-                    }
-                    
-                    // Set the new voucher value
-                    if ($voucher->reduction_tax) {
-                        $voucher->reduction_amount = ($total_reduction_value_ti + $values['tax_incl']) - $order->total_products_wt;
-                        
-                        // Add total shipping amout only if reduction amount > total shipping
-                        if ($voucher->free_shipping == 1 && $voucher->reduction_amount >= $order->total_shipping_tax_incl) {
-                            $voucher->reduction_amount -= $order->total_shipping_tax_incl;
-                        }
-                    } else {
-                        $voucher->reduction_amount = ($total_reduction_value_tex + $values['tax_excl']) - $order->total_products;
-                        
-                        // Add total shipping amout only if reduction amount > total shipping
-                        if ($voucher->free_shipping == 1 && $voucher->reduction_amount >= $order->total_shipping_tax_excl) {
-                            $voucher->reduction_amount -= $order->total_shipping_tax_excl;
-                        }
-                    }
-                    if ($voucher->reduction_amount <= 0) {
-                        continue;
-                    }
-                    
-                    $values['tax_incl'] = $order->total_products_wt - $total_reduction_value_ti;
-                    $values['tax_excl'] = $order->total_products - $total_reduction_value_tex;
-                }
                 $total_reduction_value_ti += $values['tax_incl'];
                 $total_reduction_value_tex += $values['tax_excl'];
                 
@@ -1580,7 +1561,7 @@ class Ps_Targetpay extends PaymentModule
             if (is_array($extra_vars)) {
                 $data = array_merge($data, $extra_vars);
             }
-            
+            $file_attachement = null;
             // Join PDF invoice
             if ((int)Configuration::get('PS_INVOICE') && $order_status->invoice && $order->invoice_number) {
                 $order_invoice_list = $order->getInvoicesCollection();
@@ -1589,12 +1570,10 @@ class Ps_Targetpay extends PaymentModule
                 $file_attachement['content'] = $pdf->render(false);
                 $file_attachement['name'] = Configuration::get('PS_INVOICE_PREFIX', (int)$order->id_lang, null, $order->id_shop).sprintf('%06d', $order->invoice_number).'.pdf';
                 $file_attachement['mime'] = 'application/pdf';
-            } else {
-                $file_attachement = null;
             }
             
             if (self::DEBUG_MODE) {
-                PrestaShopLogger::addLog('PaymentModule::validateOrder - Mail is about to be sent', 1, null, 'Cart', (int)$id_cart, true);
+                PrestaShopLogger::addLog('PaymentModule::validateOrder - Mail is about to be sent', 1, null, 'Cart', (int)($order->id_cart), true);
             }
             
             $orderLanguage = new Language((int) $order->id_lang);
@@ -1608,15 +1587,18 @@ class Ps_Targetpay extends PaymentModule
                         array(),
                         'Emails.Subject',
                         $orderLanguage->locale
-                        ),
+                    ),
                     $data,
                     $this->context->customer->email,
                     $this->context->customer->firstname.' '.$this->context->customer->lastname,
                     null,
                     null,
                     $file_attachement,
-                    null, _PS_MAIL_DIR_, false, (int)$order->id_shop
-                    );
+                    null,
+                    _PS_MAIL_DIR_,
+                    false,
+                    (int)$order->id_shop
+                );
             }
         }
     }
@@ -1629,8 +1611,10 @@ class Ps_Targetpay extends PaymentModule
             $this->errors[] = $this->trans('Sorry. We cannot renew your order.', array(), 'Shop.Notifications.Error');
         } elseif (!$duplication['success']) {
             $this->errors[] = $this->trans(
-                'Some items are no longer available, and we are unable to renew your order.', array(), 'Shop.Notifications.Error'
-                );
+                'Some items are no longer available, and we are unable to renew your order.',
+                array(),
+                'Shop.Notifications.Error'
+            );
         } else {
             $this->context->cookie->id_cart = $duplication['cart']->id;
             $context = $this->context;
@@ -1645,7 +1629,7 @@ class Ps_Targetpay extends PaymentModule
     {
         $products = $this->context->cart->getProducts();
         foreach ($products as $product) {
-            $this->context->cart->deleteProduct($product["id_product"]);
+            $this->context->cart->deleteProduct($product["id_product"], $product["id_product_attribute"]);
         }
         return true;
     }

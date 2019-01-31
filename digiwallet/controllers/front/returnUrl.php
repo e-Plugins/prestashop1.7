@@ -1,11 +1,12 @@
 <?php
-
 /**
- * @file    Provides support for TargetPay iDEAL, Mister Cash and Sofort Banking ...
- * @author  Yellow Melon B.V.
- * @url     http://www.idealplugins.nl
+ * @author  DigiWallet.nl
+ * @copyright Copyright (C) 2018 e-plugins.nl
+*  @license   http://opensource.org/licenses/afl-3.0.php  Academic Free License (AFL 3.0)
+ * @url     http://www.e-plugins.nl
  */
-class Ps_TargetpayReturnUrlModuleFrontController extends ModuleFrontController
+
+class DigiwalletReturnUrlModuleFrontController extends ModuleFrontController
 {
     public $ssl = true;
 
@@ -16,22 +17,22 @@ class Ps_TargetpayReturnUrlModuleFrontController extends ModuleFrontController
     public function initContent()
     {
         $retMsg = null;
-        $ps_targetpay = $this->module;
+        $digiwallet = $this->module;
         $trxid = Tools::getValue('trxid');
-        if(empty($trxid)) { //paypal use paypalid instead of trxid
+        if (empty($trxid)) { //paypal use paypalid instead of trxid
             $trxid = Tools::getValue('paypalid');
         }
-        if(empty($trxid)) { //afterpay use invoiceID instead of trxid
+        if (empty($trxid)) { //afterpay use invoiceID instead of trxid
             $trxid = Tools::getValue('invoiceID');
         }
-        $transactionInfoArr = $ps_targetpay->selectTransaction($trxid);
+        $transactionInfoArr = $digiwallet->selectTransaction($trxid);
         if ($transactionInfoArr === false) {
             Tools::redirect(_PS_BASE_URL_);
             exit();
         }
         
         if ($transactionInfoArr) {
-            $retMsg = $ps_targetpay->updateOrderAfterCheck($transactionInfoArr);
+            $retMsg = $digiwallet->updateOrderAfterCheck($transactionInfoArr);
         }
         
         $order = new Order((int) $transactionInfoArr['order_id']);
@@ -40,9 +41,10 @@ class Ps_TargetpayReturnUrlModuleFrontController extends ModuleFrontController
             $this->redirectWithNotifications($this->context->link->getPageLink('order', true, null, array()));
         } else {
             //clear cart
-            $ps_targetpay->removeCart();
+            $digiwallet->removeCart();
             // redirect to confirm page to show the result
-            Tools::redirect('index.php?controller=order-confirmation&id_cart=' . $order->id_cart . '&id_module=' . $ps_targetpay->id . '&id_order=' . $order->id . '&key=' . $order->secure_key);
+            Tools::redirect('index.php?controller=order-confirmation&id_cart=' . $order->id_cart .
+                '&id_module=' . $digiwallet->id . '&id_order=' . $order->id . '&key=' . $order->secure_key);
         }
     }
 }
