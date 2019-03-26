@@ -36,7 +36,7 @@ class DigiwalletReturnUrlModuleFrontController extends ModuleFrontController
         }
         
         $order = new Order((int) $transactionInfoArr['order_id']);
-        if ($order->current_state == Configuration::get('PS_OS_ERROR')) {
+        if (in_array($order->current_state, array(Configuration::get('PS_OS_ERROR'), Configuration::get('PS_OS_CANCELED')))) {
             $this->errors[] = $retMsg;
             $this->redirectWithNotifications($this->context->link->getPageLink('order', true, null, array()));
         } else {

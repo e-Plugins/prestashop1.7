@@ -617,7 +617,7 @@ class Digiwallet extends PaymentModule
         if ($order->current_state == Configuration::get('PS_OS_PAYMENT')) {
             return ("order $orderId had been done");
         }
-        
+        $listMethods = $this->getListMethods();
         $digiwallet = new DigiwalletCore($transactionInfoArr["paymethod"], $transactionInfoArr["rtlo"], "nl");
         $digiwallet->checkPayment($transactionInfoArr['transaction_id']);
         $updateArr = array();
@@ -648,9 +648,14 @@ class Digiwallet extends PaymentModule
                 $updateArr['paid_amount'] = $amountPaid;
             }
         } else {
-            $state = Configuration::get('PS_OS_ERROR');
-            $updateArr["description"] = 'Error:' . $digiwallet->getErrorMessage();
-            $retMsg = $updateArr["description"] = 'Error:' . $digiwallet->getErrorMessage();
+            $errorMessage = $digiwallet->getErrorMessage();
+            if (strpos($errorMessage, 'DW_SE_0021') !== false) {
+                $state = Configuration::get('PS_OS_CANCELED');
+            } else {
+                $state = Configuration::get('PS_OS_ERROR');
+            }
+            
+            $retMsg = $updateArr["description"] = 'Error:' . $errorMessage;
         }
         
         $history = new OrderHistory();
@@ -658,9 +663,12 @@ class Digiwallet extends PaymentModule
         $history->changeIdOrderState($state, $orderId);
         $history->save();
         $this->updateTransaction($updateArr, $transactionInfoArr['transaction_id']);
-        if ($paymentIsPartial) {
+        if ($digiwallet->getPaidStatus()) {
             list($payment) = $order->getOrderPaymentCollection(); // Should be one single payment
-            $payment->amount = $amountPaid;
+            $payment->payment_method = $listMethods[$transactionInfoArr["paymethod"]]['name'];
+            if ($paymentIsPartial) {
+                $payment->amount = $amountPaid;
+            }
             $payment->save();
         }
         //send email confirm;
