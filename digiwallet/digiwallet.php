@@ -31,7 +31,7 @@ class Digiwallet extends PaymentModule
     {
         $this->name = 'digiwallet';
         $this->tab = 'payments_gateways';
-        $this->version = '1.0.0';
+        $this->version = '1.0.7';
         $this->ps_versions_compliancy = array(
             'min' => '1.7.0.0',
             'max' => _PS_VERSION_
@@ -78,8 +78,8 @@ class Digiwallet extends PaymentModule
             || ! $this->registerHook('displayBackOfficeHeader')
             || ! $this->registerHook('paymentOptions')
             || ! $this->registerHook('paymentReturn')
+            || ! $this->registerHook('actionAdminControllerSetMedia')
             || ! $this->registerHook('actionOrderSlipAdd')  // for refund
-            || !$this->registerHook('cancelProduct')
             || Currency::refreshCurrencies()) {
             return false;
         }
@@ -605,8 +605,9 @@ class Digiwallet extends PaymentModule
      * Update order, order history, transaction info after payment
      *
      * @param array $transactionInfoArr
+     * @param boolean $isReport
      */
-    public function updateOrderAfterCheck($transactionInfoArr)
+    public function updateOrderAfterCheck($transactionInfoArr, $isReport = false)
     {
         $orderId = (int) $transactionInfoArr['order_id'];
         $order = new Order($orderId);
@@ -616,6 +617,13 @@ class Digiwallet extends PaymentModule
         
         if ($order->current_state == Configuration::get('PS_OS_PAYMENT')) {
             return ("order $orderId had been done");
+        }
+        try {
+            list($payment) = $order->getOrderPaymentCollection();
+            if (!empty($payment) && $payment->transaction_id == $transactionInfoArr['transaction_id']) {
+                return ("transaction {$transactionInfoArr['transaction_id']} had been done");
+            }
+        } catch (Exception $e) {
         }
         $listMethods = $this->getListMethods();
         $digiwallet = new DigiwalletCore($transactionInfoArr["paymethod"], $transactionInfoArr["rtlo"], "nl");
@@ -666,6 +674,7 @@ class Digiwallet extends PaymentModule
         if ($digiwallet->getPaidStatus()) {
             list($payment) = $order->getOrderPaymentCollection(); // Should be one single payment
             $payment->payment_method = $listMethods[$transactionInfoArr["paymethod"]]['name'];
+            $payment->transaction_id = $transactionInfoArr['transaction_id'];
             if ($paymentIsPartial) {
                 $payment->amount = $amountPaid;
             }
@@ -673,7 +682,7 @@ class Digiwallet extends PaymentModule
         }
         //send email confirm;
         $order = new Order($orderId);
-        $this->sendEmailConfirm($order);
+        $this->sendEmailConfirm($order, $isReport);
         return $retMsg;
     }
     
@@ -759,66 +768,85 @@ class Digiwallet extends PaymentModule
             
         return $listMethods;
     }
-    
+
+    public function hookActionAdminControllerSetMedia()
+    {
+        if (Tools::getValue('controller') == "AdminOrders" && $id_order = Tools::getValue('id_order')) {
+            $sql = sprintf("SELECT `transaction_id` FROM `" . _DB_PREFIX_ . "digiwallet` WHERE `order_id`= '%s' AND paid_amount > 0", $id_order);
+            $trxid = Db::getInstance()->getValue($sql);
+            if ($trxid) {
+                Media::addJsDefL('chb_digiwallet_refund', $this->l('Refund on Digiwallet'));
+                $this->context->controller->addJS($this->_path . '/views/js/bo_order.js');
+            }
+        }
+    }
+
     /**
      *
      * @param unknown $params
      */
     public function hookActionOrderSlipAdd($params)
     {
-        $this->refund($params);
+        if (Tools::isSubmit('doPartialRefundDigiwallet')) {
+            return $this->refund($params);
+        }
     }
     
     /**
      *
      * @param unknown $params
-     * @return boolean
      */
     public function refund($params)
     {
-        if (empty($params['productList'])) {
-            return false;
-        }
-            
         $order = $params['order'];
-        $orderId = $order->id;
-        $customer = new Customer($order->id_customer);
-            
-        $sql = sprintf("SELECT `rtlo`,`paymethod`, `transaction_id`
-            FROM `" . _DB_PREFIX_ . "digiwallet`
-            WHERE `order_id`= '%s'", $orderId);
-        $result = Db::getInstance()->getRow($sql);
-            
         $refundAmount = 0;
         foreach ($params['productList'] as $product) {
-            $refundAmount += $product['quantity'] * $product['amount'];
+            $refundAmount += $product['amount'];
         }
-            
+        if (Tools::getValue('partialRefundShippingCost')) {
+            $refundAmount += Tools::getValue('partialRefundShippingCost');
+        }
+        
         if ($refundAmount == 0) {
             return false;
         }
-                
-        $dataRefund = array(
-                    'paymethodID' => $result['paymethod'],
-                    'transactionID' => $result['transaction_id'],
-                    'amount' => (int)((float)($refundAmount) * 100),
-                    'description' => 'OrderId: ' . $orderId . ', Amount: ' . $refundAmount,
-                    'internalNote' => 'Internal note - OrderId: ' . $orderId . ', Amount: ' . $refundAmount . ', Customer Email: ' . $customer->email,
-                    'consumerName' => $customer->firstname . ' ' . $customer->lastname
-                );
-                
-        $digiwallet = new DigiwalletCore($result['paymethod'], $result['rtlo']);
-                
-        if (! $digiwallet->refund(Configuration::get('DIGIWALLET_TOKEN'), $dataRefund)) {
-            PrestaShopLogger::addLog($digiwallet->getErrorMessage(), 3);
-            $this->context->controller->errors[] = ($digiwallet->getErrorMessage());
-        }
+        
+        $this->refundProcess($order, $refundAmount);
     }
     
-    public function hookCancelProduct($params)
+    /**
+     *
+     * @param unknown $order
+     * @param unknown $refundAmount
+     */
+    public function refundProcess($order, $refundAmount)
     {
-        echo __FUNCTION__;
-        die;
+        $customer = new Customer($order->id_customer);
+        $sql = sprintf("SELECT `rtlo`,`paymethod`, `transaction_id`
+            FROM `" . _DB_PREFIX_ . "digiwallet`
+            WHERE `order_id`= '%s'", $order->id);
+        $result = Db::getInstance()->getRow($sql);
+        $dataRefund = array(
+            'paymethodID' => $result['paymethod'],
+            'transactionID' => $result['transaction_id'],
+            'amount' => (int)((float)($refundAmount) * 100),
+            'description' => 'OrderId: ' . $order->id . ', Amount: ' . $refundAmount,
+            'internalNote' => 'Internal note - OrderId: ' . $order->id . ', Amount: ' . $refundAmount . ', Customer Email: ' . $customer->email,
+            'consumerName' => $customer->firstname . ' ' . $customer->lastname
+        );
+        
+        $digiwallet = new DigiwalletCore($result['paymethod'], $result['rtlo']);
+        
+        if (! $digiwallet->refund(Configuration::get('DIGIWALLET_TOKEN'), $dataRefund)) {
+            PrestaShopLogger::addLog($digiwallet->getErrorMessage(), 3, null, 'Order', $order->id, true);
+            $this->context->controller->errors[] = ($digiwallet->getErrorMessage());
+        } else {
+            $history = new OrderHistory();
+            $history->id_order = $order->id;
+            $history->changeIdOrderState(Configuration::get('PS_OS_REFUND'), $order->id);
+            $history->save();
+            $history->sendEmail($order);
+        }
     }
     
     public function validateOrder(
@@ -1406,12 +1434,12 @@ class Digiwallet extends PaymentModule
         }
     }
     
-    public function sendEmailConfirm($order, $extra_vars = null)
+    public function sendEmailConfirm($order, $isReport = false, $extra_vars = null)
     {
-        if ($order->current_state != Configuration::get('PS_OS_ERROR') && $order->current_state != Configuration::get('PS_OS_CANCELED') && $this->context->customer->id) {
+        if ($order->current_state != Configuration::get('PS_OS_ERROR') && $order->current_state != Configuration::get('PS_OS_CANCELED') && ($this->context->customer->id || $isReport)) {
             //$products_list = '';
             $virtual_product = true;
-            $order_status = new OrderState((int)$order->current_state, (int)$this->context->language->id);
+            $order_status = new OrderState((int)$order->current_state, (int)$order->id_lang);
             $carrier = new Carrier($order->id_carrier);
             $product_var_tpl_list = array();
             $specific_price = null;
@@ -1425,14 +1453,14 @@ class Digiwallet extends PaymentModule
                     'id_product' => $product['id_product'],
                     'reference' => $product['reference'],
                     'name' => $product['product_name'].(isset($product['attributes']) ? ' - '.$product['attributes'] : ''),
-                    'price' => Tools::displayPrice($product_price * $product['product_quantity'], $this->context->currency, false),
+                    'price' => Tools::displayPrice($product_price * $product['product_quantity'], (int)$order->id_currency, false),
                     'quantity' => $product['product_quantity'],
                     'customization' => array()
                 );
                 
                 if (isset($product['price']) && $product['price']) {
-                    $product_var_tpl['unit_price'] = Tools::displayPrice($product['price'], $this->context->currency, false);
-                    $product_var_tpl['unit_price_full'] = Tools::displayPrice($product['price'], $this->context->currency, false)
+                    $product_var_tpl['unit_price'] = Tools::displayPrice($product['price'], (int)$order->id_currency, false);
+                    $product_var_tpl['unit_price_full'] = Tools::displayPrice($product['price'], (int)$order->id_currency, false)
                     .' '.$product['unity'];
                 } else {
                     $product_var_tpl['unit_price'] = $product_var_tpl['unit_price_full'] = '';
@@ -1458,7 +1486,7 @@ class Digiwallet extends PaymentModule
                         $product_var_tpl['customization'][] = array(
                             'customization_text' => $customization_text,
                             'customization_quantity' => $customization_quantity,
-                            'quantity' => Tools::displayPrice($customization_quantity * $product_price, $this->context->currency, false)
+                            'quantity' => Tools::displayPrice($customization_quantity * $product_price, (int)$order->id_currency, false)
                         );
                     }
                 }
@@ -1469,7 +1497,7 @@ class Digiwallet extends PaymentModule
                     $virtual_product &= false;
                 }
             } // end foreach ($products)
-                    
+            
             $product_list_txt = '';
             $product_list_html = '';
             if (count($product_var_tpl_list) > 0) {
@@ -1498,7 +1526,7 @@ class Digiwallet extends PaymentModule
                 
                 $cart_rules_list[] = array(
                     'voucher_name' => $cart_rule['obj']->name,
-                    'voucher_reduction' => ($values['tax_incl'] != 0.00 ? '-' : '').Tools::displayPrice($values['tax_incl'], $this->context->currency, false)
+                    'voucher_reduction' => ($values['tax_incl'] != 0.00 ? '-' : '').Tools::displayPrice($values['tax_incl'], (int)$order->id_currency, false)
                 );
             }
             
@@ -1508,16 +1536,17 @@ class Digiwallet extends PaymentModule
                 $cart_rules_list_txt = $this->getEmailTemplateContent('order_conf_cart_rules.txt', Mail::TYPE_TEXT, $cart_rules_list);
                 $cart_rules_list_html = $this->getEmailTemplateContent('order_conf_cart_rules.tpl', Mail::TYPE_HTML, $cart_rules_list);
             }
-                
+            
             $invoice = new Address((int)$order->id_address_invoice);
             $delivery = new Address((int)$order->id_address_delivery);
+            $customer = new Customer((int)($order->id_customer));
             $delivery_state = $delivery->id_state ? new State((int)$delivery->id_state) : false;
             $invoice_state = $invoice->id_state ? new State((int)$invoice->id_state) : false;
             
             $data = array(
-                '{firstname}' => $this->context->customer->firstname,
-                '{lastname}' => $this->context->customer->lastname,
-                '{email}' => $this->context->customer->email,
+                '{firstname}' => $customer->firstname,
+                '{lastname}' => $customer->lastname,
+                '{email}' => $customer->email,
                 '{delivery_block_txt}' => $this->_getFormatedAddress($delivery, "\n"),
                 '{invoice_block_txt}' => $this->_getFormatedAddress($invoice, "\n"),
                 '{delivery_block_html}' => $this->_getFormatedAddress($delivery, '<br />', array(
@@ -1559,13 +1588,13 @@ class Digiwallet extends PaymentModule
                 '{products_txt}' => $product_list_txt,
                 '{discounts}' => $cart_rules_list_html,
                 '{discounts_txt}' => $cart_rules_list_txt,
-                '{total_paid}' => Tools::displayPrice($order->total_paid, $this->context->currency, false),
-                '{total_products}' => Tools::displayPrice(Product::getTaxCalculationMethod() == PS_TAX_EXC ? $order->total_products : $order->total_products_wt, $this->context->currency, false),
-                '{total_discounts}' => Tools::displayPrice($order->total_discounts, $this->context->currency, false),
-                '{total_shipping}' => Tools::displayPrice($order->total_shipping, $this->context->currency, false),
-                '{total_wrapping}' => Tools::displayPrice($order->total_wrapping, $this->context->currency, false),
-                '{total_tax_paid}' => Tools::displayPrice(($order->total_products_wt - $order->total_products) + ($order->total_shipping_tax_incl - $order->total_shipping_tax_excl), $this->context->currency, false));
-                
+                '{total_paid}' => Tools::displayPrice($order->total_paid, (int)$order->id_currency, false),
+                '{total_products}' => Tools::displayPrice(Product::getTaxCalculationMethod() == PS_TAX_EXC ? $order->total_products : $order->total_products_wt, (int)$order->id_currency, false),
+                '{total_discounts}' => Tools::displayPrice($order->total_discounts, (int)$order->id_currency, false),
+                '{total_shipping}' => Tools::displayPrice($order->total_shipping, (int)$order->id_currency, false),
+                '{total_wrapping}' => Tools::displayPrice($order->total_wrapping, (int)$order->id_currency, false),
+                '{total_tax_paid}' => Tools::displayPrice(($order->total_products_wt - $order->total_products) + ($order->total_shipping_tax_incl - $order->total_shipping_tax_excl), (int)$order->id_currency, false));
+            
             if (is_array($extra_vars)) {
                 $data = array_merge($data, $extra_vars);
             }
@@ -1586,7 +1615,7 @@ class Digiwallet extends PaymentModule
             
             $orderLanguage = new Language((int) $order->id_lang);
             
-            if (Validate::isEmail($this->context->customer->email)) {
+            if (Validate::isEmail($customer->email)) {
                 Mail::Send(
                     (int)$order->id_lang,
                     'order_conf',
@@ -1597,8 +1626,8 @@ class Digiwallet extends PaymentModule
                         $orderLanguage->locale
                     ),
                     $data,
-                    $this->context->customer->email,
-                    $this->context->customer->firstname.' '.$this->context->customer->lastname,
+                    $customer->email,
+                    $customer->firstname.' '.$customer->lastname,
                     null,
                     null,
                     $file_attachement,

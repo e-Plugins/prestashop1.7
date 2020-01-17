@@ -26,13 +26,16 @@
 * to avoid any conflicts with others containers.
 */
 
-jQuery(document).ready(function () {
-    jQuery('body').on('change', 'input[type=radio][name=payment_option_IDE]', function () {
-        $(this).parents('.additional-information').next('.js-payment-option-form').find('input[name=option]').val($(this).val());
-        return false;
-    });
-    jQuery('body').on('change', 'input[name=payment_option_DEB]', function () {
-        $(this).parents('.additional-information').next('.js-payment-option-form').find('input[name=option]').val($(this).val());
-        return false;
-    });
-});
+// init in-context
+$(document).ready(() => {
+  // Make partial order refund in Order page in BO
+  $(document).on('click', '#desc-order-partial_refund', () => {
+    // Create checkbox and insert for Paypal refund 
+    if ($('#doPartialRefundDigiwallet').length == 0) {
+            let newCheckBox = `<p class="checkbox"><label for="doPartialRefundDigiwallet">
+            <input type="checkbox" id="doPartialRefundDigiwallet" name="doPartialRefundDigiwallet">
+        ${chb_digiwallet_refund}</label></p>`;
+      $('button[name=partialRefund]').parent('.partial_refund_fields').prepend(newCheckBox);
+    }
+  });
+})

@@ -24,7 +24,7 @@ $_MODULE['<{digiwallet}prestashop>digiwallet_f4f70727dc34561dfde1a3c529b6205c'] 
 $_MODULE['<{digiwallet}prestashop>digiwallet_f3a85103a124a4be61e2c98f20391754'] = 'Inschakelen Afterpay';
 $_MODULE['<{digiwallet}prestashop>digiwallet_1e044b532ff24016d786211d847af83b'] = 'Inschakelen Bancontact';
 $_MODULE['<{digiwallet}prestashop>digiwallet_3d5efc13d85158208b98790591892ffe'] = 'Inschakelen Bankwire';
-$_MODULE['<{digiwallet}prestashop>digiwallet_11f11a67d3f45efdf27c8867a6b6f9d7'] = 'Inschakelen Creditcard (alleen mogelijk wanneer creditcard is geactiveerd op uw targetpay account)';
+$_MODULE['<{digiwallet}prestashop>digiwallet_11f11a67d3f45efdf27c8867a6b6f9d7'] = 'Inschakelen Creditcard (alleen mogelijk wanneer creditcard is geactiveerd op uw digiwallet account)';
 $_MODULE['<{digiwallet}prestashop>digiwallet_b91fc9b7cd545072455d530fcd296b90'] = 'Inschakelen iDEAL';
 $_MODULE['<{digiwallet}prestashop>digiwallet_170eec16db9e622275162398c6a9a93e'] = 'Inschakelen Paypal';
 $_MODULE['<{digiwallet}prestashop>digiwallet_8bc878f31d7391a6749885bfc9f7261b'] = 'Inschakelen Paysafecard';
