@@ -25,7 +25,7 @@ class Digiwallet extends PaymentModule
     const DIGIWALLET_PENDING = 'digiwallet_pending';
     const DEFAULT_ENABLE_METHOD = 1;
     
-    public $appId = 'e16cc084dc5a1341f373e016d40ae1b2';
+    public $appId = '87b9b7383334aff69cedb34d8e1e996e';
     
     public function __construct()
     {
