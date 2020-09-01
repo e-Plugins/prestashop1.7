@@ -1,7 +1,7 @@
 <?php
 
 global $_MODULE;
-$_MODULE = array();
+$_MODULE = [];
 $_MODULE['<{digiwallet}prestashop>digiwallet_937aa5def2244f25d0d7262d96dba43f'] = 'Digiwallet for Prestashop';
 $_MODULE['<{digiwallet}prestashop>digiwallet_cbc74e68b34802e73ca7dc0fab9344fe'] = 'Activates iDEAL, Bancontact, Sofort Banking, Visa / Mastercard Credit cards, PaysafeCard, AfterPay, BankWire, PayPal and Refunds in Prestashop';
 $_MODULE['<{digiwallet}prestashop>digiwallet_a02758d758e8bec77a33d7f392eb3f8a'] = 'Er is nog geen valuta ingesteld voor deze module';
