@@ -15,3 +15,21 @@
     </div>
 </div>
 </section>
+
+<script>
+(function() {
+document.addEventListener('DOMContentLoaded', function(){
+{if $method == 'IDE'}
+    jQuery('body').on('change', 'input[type=radio][name=payment_option_IDE]', function () {
+        jQuery(this).parents('.additional-information').next('.js-payment-option-form').find('input[name=option]').val(jQuery(this).val());
+        return false;
+    });
+{else}
+    jQuery('body').on('change', 'input[name=payment_option_DEB]', function () {
+        jQuery(this).parents('.additional-information').next('.js-payment-option-form').find('input[name=option]').val(jQuery(this).val());
+        return false;
+    });
+{/if}
+}, false);
+})();
+</script>

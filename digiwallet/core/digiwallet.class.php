@@ -19,7 +19,7 @@
 
 class DigiwalletCore
 {
-    const APP_ID = 'dw_prestashop1.7_1.1.1';
+    const APP_ID = 'dw_prestashop1.7_1.1.2';
 
     // Constants
     const MIN_AMOUNT = 84;

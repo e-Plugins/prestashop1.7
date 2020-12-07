@@ -48,7 +48,7 @@ class Digiwallet extends PaymentModule
     {
         $this->name = 'digiwallet';
         $this->tab = 'payments_gateways';
-        $this->version = '1.1.1';
+        $this->version = '1.1.2';
         $this->ps_versions_compliancy = [
             'min' => '1.7.0.0',
             'max' => _PS_VERSION_,
