@@ -365,7 +365,7 @@ BankWire, PayPal and Refunds in Prestashop'
                 $this->l('choose your Organization').' >> '.$this->l('Websites & Outlets'),
                 'name' => 'DIGIWALLET_RTLO',
                 'required' => true,
-                'label' => $this->l('RTLO'),
+                'label' => $this->l('Outletcode'),
             ],
             [
                 'col' => 3,
@@ -374,7 +374,7 @@ BankWire, PayPal and Refunds in Prestashop'
                 $this->l('choose your Organization').' >> '.$this->l('Developers'),
                 'name' => 'DIGIWALLET_TOKEN',
                 'required' => false,
-                'label' => $this->l('Digiwallet Token'),
+                'label' => $this->l('Digiwallet API Token'),
             ],
         ];
         $listMethods = $this->getListMethods();
